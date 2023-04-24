@@ -1,0 +1,262 @@
+
+### edit hosts on nodes 
+192.168.56.5 master master
+
+###swap off
+>free -m 
+
+>sudo swapoff -a 
+
+>sudo vi /etc/fstab 
+
+###install prerequites
+
+- https://kubernetes.io/docs/setup/production-environment/container-runtimes/
+
+
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# sysctl params required by setup, params persist across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+# Apply sysctl params without reboot
+sudo sysctl --system
+
+lsmod | grep br_netfilter
+lsmod | grep overlay
+
+sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+
+#### install container-runtimes 
+
+sudo apt-get update && sudo apt-get upgrade -y 
+
+https://github.com/containerd/containerd/blob/main/docs/getting-started.md
+
+sudo apt install containerd -y
+
+sudo systemctl start containerd
+sudo systemctl daemon-reload
+sudo systemctl enable --now containerd
+
+### create a config.toml 
+
+sudo mkdir -p /etc/containerd/
+
+containerd config default > /etc/containerd/config.toml  # sudo -i 
+
+
+### Installing kubeadm, kubelet and kubectl
+https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#installing-kubeadm-kubelet-and-kubectl
+
+#Kubernetes apt repository
+#note to create /etc/apt/keyrings/ and /etc/apt/sources.list.d/
+
+sudo mkdir -p /etc/apt/keyrings/ /etc/apt/sources.list.d/
+
+sudo curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+#Get the current version
+sudo apt-get update  && sudo apt-get upgrade -y 
+
+sudo apt search kubeadm 
+sudo apt search kubelet 
+sudoapt search kubectl 
+#get previous version 
+sudo apt list kubectl -a
+
+Listing...
+kubectl/kubernetes-xenial 1.27.0-00 amd64
+kubectl/kubernetes-xenial 1.26.4-00 amd64
+kubectl/kubernetes-xenial 1.25.9-00 amd64
+kubectl/kubernetes-xenial 1.25.1-00 amd64
+kubectl/kubernetes-xenial 1.25.0-00 amd64
+kubectl/kubernetes-xenial 1.24.13-00 amd64
+kubectl/kubernetes-xenial 1.24.12-00 amd64
+#install previous version 
+sudo apt-get install kubectl=1.25.0-00 kubeadm=1.25.0-00 kubelet=1.25.0-00 -y
+
+#hold to avoid accidental update  version 
+sudo apt-mark hold kubectl kubeadm kubelet 
+
+#
+apt-mark  showhold
+kubeadm
+kubectl
+kubelet
+
+#Creating a cluster with kubeadm
+#sudo kubeadm init --apiserver-advertise-address 192.168.56.5 --pod-network-cidr 192.168.0.0/16 --upload-certs --control-plane-endpoint master.local --kubernetes-version 1.25.0
+#sudo kubeadm init --upload-certs --apiserver-advertise-address 192.168.56.5 --control-plane-endpoint master --pod-network-cidr 192.168.0.0/16 --kubernetes-version 1.25.0
+
+sudo kubeadm init --upload-certs --apiserver-advertise-address 192.168.56.5 --control-plane-endpoint master --pod-network-cidr 172.16.0.0/16 --kubernetes-version 1.26.0
+
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+You can now join any number of the control-plane node running the following command on each as root:
+
+  kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
+        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9 \
+        --control-plane --certificate-key d7fdc8770764dc0f198124e7fe68e6fcc2b5bda91521e0080036feff93a8d087
+
+Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
+As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
+"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
+        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9
+		
+### install CNI 		
+https://kubernetes.io/docs/concepts/cluster-administration/networking/#how-to-implement-the-kubernetes-network-model
+
+
+##install CNI plugin choosing - flannel (Container Runtime must be configured to load the CNI plugins,which manage their network and security capabilities,  Kubernetes network mode) 
+#install helm 
+https://helm.sh/docs/intro/install/#helm
+
+#install using snap 
+sudo snap install helm --classic
+vagrant@master:~$ sudo snap install helm --classic
+helm 3.10.1 from Snapcrafters installed
+
+#install flannel (networking addons) 
+# Needs manual creation of namespace to avoid helm error
+kubectl create ns kube-flannel
+kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=privileged
+
+#add flannel repo
+helm repo add flannel https://flannel-io.github.io/flannel/
+
+#https://github.com/flannel-io/flannel/blob/master/Documentation/troubleshooting.md troubleshooting 
+# use  --pod-network-cidr=10.244.0.0/16 --iface=eth1
+# helm install flannel --set podCidr="172.16.0.0/16" --namespace kube-flannel flannel/flannel
+helm install flannel --set podCidr="172.16.0.0/16"  --namespace kube-flannel flannel/flannel
+
+# https://mvallim.github.io/kubernetes-under-the-hood/documentation/kube-flannel.html
+#
+ kubeadm config print init-defaults
+ kubeadm config print join-defaults
+ 
+#ip -a will show flanel tunnels
+
+4: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UNKNOWN group default
+    link/ether 1a:61:33:ca:1b:3a brd ff:ff:ff:ff:ff:ff
+    inet 192.168.0.0/32 scope global flannel.1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::1861:33ff:feca:1b3a/64 scope link
+       valid_lft forever preferred_lft forever
+#reload the systems 
+sudo systemctl daemon-reload
+
+##joining worker nodes 
+ 
+
+#since server is more than 24hours, token will be create  on the MASTER
+
+vagrant@master:~$ kubeadm token list
+vagrant@master:~$ kubectl get nodes
+NAME     STATUS   ROLES           AGE     VERSION
+master   Ready    control-plane   2d15h   v1.25.0
+vagrant@master:~$ kubeadm token list
+vagrant@master:~$ kubeadm token create
+ajlql4.1oi9x8lljcnaqmre
+vagrant@master:~$ openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | \
+>    openssl dgst -sha256 -hex | sed 's/^.* //'
+269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9
+vagrant@master:~$ kubeadm token list
+TOKEN                     TTL         EXPIRES                USAGES                   DESCRIPTION                                                EXTRA GROUPS
+ajlql4.1oi9x8lljcnaqmre   23h         2023-04-18T09:24:49Z   authentication,signing   <none>                                                     system:bootstrappers:kubeadm:default-node-token
+vagrant@master:~$
+
+##actual join on the WORKER side 
+#ping master 
+64 bytes from master (192.168.56.5): icmp_seq=1 ttl=64 time=1.08 ms
+^
+
+#sudo kubeadm join master:6443 --token ajlql4.1oi9x8lljcnaqmre \
+        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9 
+
+vagrant@master:~$ kubectl get nodes
+NAME     STATUS   ROLES           AGE     VERSION
+master   Ready    control-plane   2d15h   v1.25.0
+node1    Ready    <none>          61s     v1.25.0
+vagrant@master:~$
+
+
+=====Optional Bash completion==========
+#sudo apt-get install bash completion 
+
+type cheat sheet in kubernetes.io 
+
+# add in ~/.bashrc
+
+#add also the alias in ~/.bashrc
+alias k=kubectl >> ~/.bashrc
+complete -o default -F __start_kubectl k >> ~/.bashrc
+
+
+#tainting the master 
+#using k describe node master under the Taints section 
+Taints:             node-role.kubernetes.io/control-plane:NoSchedule
+
+#allow non-infrapod to be scheduled in the cp  (notice the -)
+vagrant@master:~$ k taint node master node-role.kubernetes.io/control-plane:NoSchedule-
+node/master untainted
+vagrant@master:~$ k taint node master node-role.kubernetes.io/control-plane:NoSchedule-
+node/master untainted
+
+#_#_#_#_#_#_#_#_#_#_#_#_#_#_#_#_#_#_#    
+
+## Deployment creation 
+
+kubectl create deployment deploytwo --image=nginx --dry-run=client --replicas=2 -o yaml > dep_nginxtwo.yaml
+
+#without putting containerPort: 80 in the spec, kubectl expose deployment deploytwo will fail
+
+#therefore search for "container ports spec"
+
+
+#kubectl expose deployment deploytwo
+service/deploytwo exposed
+
+#display the service (clusterIP is provided by the CNI plugin)
+vagrant@master:~$ k get svc
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+deploytwo    ClusterIP   10.110.209.45   <none>        80/TCP    97s
+kubernetes   ClusterIP   10.96.0.1       <none>        443/TCP   2d17h
+#display the endpoints ( provided by kubelet and kubeproxy)
+vagrant@master:~$ k get ep
+NAME         ENDPOINTS                       AGE
+deploytwo    192.168.0.5:80,192.168.1.5:80   2m23s
+
+
+
+
+#tips and tricks https://docs.linuxfoundation.org/tc-docs/certification/tips-cka-and-ckad
