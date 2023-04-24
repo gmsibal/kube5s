@@ -3,11 +3,9 @@
 192.168.56.5 master master
 
 ###swap off
->free -m 
-
->sudo swapoff -a 
-
->sudo vi /etc/fstab 
+free -m 
+sudo swapoff -a 
+sudo vi /etc/fstab 
 
 ###install prerequites
 
@@ -63,7 +61,6 @@ https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-ku
 #note to create /etc/apt/keyrings/ and /etc/apt/sources.list.d/
 
 sudo mkdir -p /etc/apt/keyrings/ /etc/apt/sources.list.d/
-
 sudo curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
 
 #Get the current version
@@ -73,7 +70,7 @@ sudo apt search kubeadm
 sudo apt search kubelet 
 sudoapt search kubectl 
 #get previous version 
-sudo apt list kubectl -a
+sudo apt list kubectl -a #or sudo apt-cache madison kubectl
 
 Listing...
 kubectl/kubernetes-xenial 1.27.0-00 amd64
@@ -101,37 +98,37 @@ kubelet
 
 sudo kubeadm init --upload-certs --apiserver-advertise-address 192.168.56.5 --control-plane-endpoint master --pod-network-cidr 172.16.0.0/16 --kubernetes-version 1.26.0
 
+OUTPUT
+#Your Kubernetes control-plane has initialized successfully!
+#
+#To start using your cluster, you need to run the following as a regular user:
+#
+#  mkdir -p $HOME/.kube
+#  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+# sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
-Your Kubernetes control-plane has initialized successfully!
+#Alternatively, if you are the root user, you can run:
 
-To start using your cluster, you need to run the following as a regular user:
+#  export KUBECONFIG=/etc/kubernetes/admin.conf
 
-  mkdir -p $HOME/.kube
-  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+#You should now deploy a pod network to the cluster.
+#Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+#  https://kubernetes.io/docs/concepts/cluster-administration/addons/
 
-Alternatively, if you are the root user, you can run:
+#You can now join any number of the control-plane node running the following command on each as root:
 
-  export KUBECONFIG=/etc/kubernetes/admin.conf
+#  kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
+#        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9 \
+#        --control-plane --certificate-key d7fdc8770764dc0f198124e7fe68e6fcc2b5bda91521e0080036feff93a8d087
 
-You should now deploy a pod network to the cluster.
-Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
-  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+#Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
+#As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
+#"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
 
-You can now join any number of the control-plane node running the following command on each as root:
+#Then you can join any number of worker nodes by running the following on each as root:
 
-  kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
-        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9 \
-        --control-plane --certificate-key d7fdc8770764dc0f198124e7fe68e6fcc2b5bda91521e0080036feff93a8d087
-
-Please note that the certificate-key gives access to cluster sensitive data, keep it secret!
-As a safeguard, uploaded-certs will be deleted in two hours; If necessary, you can use
-"kubeadm init phase upload-certs --upload-certs" to reload certs afterward.
-
-Then you can join any number of worker nodes by running the following on each as root:
-
-kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
-        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9
+#kubeadm join master:6443 --token m41hfi.9iq6wziicdeq0ow2 \
+#        --discovery-token-ca-cert-hash sha256:269636fafc2fe996e5c9e14b1cd66daf091a6ec1ad117802ffd2462419a7ccb9
 		
 ### install CNI 		
 https://kubernetes.io/docs/concepts/cluster-administration/networking/#how-to-implement-the-kubernetes-network-model
@@ -139,12 +136,12 @@ https://kubernetes.io/docs/concepts/cluster-administration/networking/#how-to-im
 
 ##install CNI plugin choosing - flannel (Container Runtime must be configured to load the CNI plugins,which manage their network and security capabilities,  Kubernetes network mode) 
 #install helm 
-https://helm.sh/docs/intro/install/#helm
+#https://helm.sh/docs/intro/install/#helm
 
 #install using snap 
 sudo snap install helm --classic
-vagrant@master:~$ sudo snap install helm --classic
-helm 3.10.1 from Snapcrafters installed
+#vagrant@master:~$ sudo snap install helm --classic
+#helm 3.10.1 from Snapcrafters installed
 
 #install flannel (networking addons) 
 # Needs manual creation of namespace to avoid helm error
@@ -154,7 +151,7 @@ kubectl label --overwrite ns kube-flannel pod-security.kubernetes.io/enforce=pri
 #add flannel repo
 helm repo add flannel https://flannel-io.github.io/flannel/
 
-#https://github.com/flannel-io/flannel/blob/master/Documentation/troubleshooting.md troubleshooting 
+# https://github.com/flannel-io/flannel/blob/master/Documentation/troubleshooting.md troubleshooting 
 # use  --pod-network-cidr=10.244.0.0/16 --iface=eth1
 # helm install flannel --set podCidr="172.16.0.0/16" --namespace kube-flannel flannel/flannel
 helm install flannel --set podCidr="172.16.0.0/16"  --namespace kube-flannel flannel/flannel
